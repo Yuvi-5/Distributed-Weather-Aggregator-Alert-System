@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GTA Weather Hub</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+    <div class="background-gradient"></div>
+
+    <header class="top-nav glass">
+        <div class="logo-block">
+            <div class="logo-circle">GW</div>
+            <div>
+                <h1>GTA Weather Hub</h1>
+                <p class="subtitle">Brampton / Mississauga / Toronto</p>
+            </div>
+        </div>
+        <p class="updated" id="updated-time">Last Updated: --</p>
+    </header>
+
+    <main class="dashboard">
+
+        <!-- City Selector -->
+        <section class="city-selector card glass">
+            <div class="card-header">
+                <h3>Location</h3>
+                <span class="pill pill-gradient">GTA</span>
+            </div>
+            <label for="city">Select City</label>
+            <select id="city">
+                <option value="Brampton">Brampton</option>
+                <option value="Mississauga">Mississauga</option>
+                <option value="Toronto">Toronto</option>
+            </select>
+        </section>
+
+        <!-- Current Weather -->
+        <section class="current-weather card glass hero">
+            <div class="hero-main">
+                <div>
+                    <h2 id="city-name">Brampton</h2>
+                    <p class="hero-subtitle" id="hero-subtitle">Live data pending</p>
+                </div>
+                <div class="temp" id="temp-now">--</div>
+            </div>
+            <div class="hero-meta">
+                <p class="condition" id="condition">Awaiting data...</p>
+                <p id="high-low">High: -- Low: --</p>
+            </div>
+        </section>
+
+        <!-- Recent Trend (hourly-ish) -->
+        <section class="hourly card glass">
+            <div class="card-header">
+                <h3>Recent Trend</h3>
+                <span class="pill">Last few buckets</span>
+            </div>
+            <div class="hours" id="hourly-cards"></div>
+        </section>
+
+        <!-- 3 Day Forecast -->
+        <section class="weekly card glass">
+            <div class="card-header">
+                <h3>3-Day Forecast</h3>
+                <span class="pill">OpenWeather</span>
+            </div>
+            <div class="week" id="weekly-cards"></div>
+        </section>
+
+        <!-- Alerts -->
+        <section class="alerts card glass">
+            <div class="card-header">
+                <h3>Alerts</h3>
+                <span class="pill">Rules engine</span>
+            </div>
+            <ul class="alert-list" id="alerts-list">
+                <li class="alert-item">No alerts yet.</li>
+            </ul>
+        </section>
+
+        <!-- Metrics -->
+        <section class="metrics card glass">
+            <div class="metric-box metric-1">
+                <p class="metric-label">Humidity</p>
+                <p class="metric-value" id="humidity-value">--</p>
+                <p class="metric-sub" id="humidity-sub">Latest reading</p>
+            </div>
+            <div class="metric-box metric-2">
+                <p class="metric-label">Wind</p>
+                <p class="metric-value" id="wind-value">--</p>
+                <p class="metric-sub" id="wind-sub">Latest reading</p>
+            </div>
+            <div class="metric-box metric-3">
+                <p class="metric-label">Pressure</p>
+                <p class="metric-value" id="pressure-value">--</p>
+                <p class="metric-sub" id="pressure-sub">hPa</p>
+            </div>
+            <div class="metric-box metric-4">
+                <p class="metric-label">Rain</p>
+                <p class="metric-value" id="rain-value">--</p>
+                <p class="metric-sub" id="rain-sub">Last observation</p>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
