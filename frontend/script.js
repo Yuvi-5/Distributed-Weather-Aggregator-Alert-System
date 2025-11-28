@@ -1,6 +1,7 @@
-const API_BASE = window.API_BASE || "http://localhost:8080";
-const API_KEY = "devkey"; // match infra/docker-compose.yml; change for prod
-const MQTT_URL = window.MQTT_URL || "ws://localhost:9001";
+const API_BASE =
+    window.API_BASE ||
+    `${window.location.protocol}//${window.location.hostname}:8080`;
+const API_KEY = window.API_KEY || "devkey"; // match infra/docker-compose.yml; change for prod
 
 const CITY_CONFIG = {
     Brampton: { id: "brampton", lat: 43.7315, lon: -79.7624 },
@@ -17,7 +18,6 @@ const conditionEl = document.getElementById("condition");
 const highLowEl = document.getElementById("high-low");
 const hourlyCards = document.getElementById("hourly-cards");
 const weeklyCards = document.getElementById("weekly-cards");
-const alertsList = document.getElementById("alerts-list");
 
 const humidityValue = document.getElementById("humidity-value");
 const humiditySub = document.getElementById("humidity-sub");
@@ -33,7 +33,7 @@ const gradientClasses = ["gradient-1", "gradient-2", "gradient-3"];
 const softClasses = ["soft-1", "soft-2", "soft-3"];
 
 const formatTemp = (v) =>
-    typeof v === "number" ? `${v.toFixed(1)}°C` : "--";
+    typeof v === "number" ? `${v.toFixed(1)}\u00b0C` : "--";
 
 const formatPct = (v) =>
     typeof v === "number" ? `${Math.round(v * 100)}%` : "--";
@@ -50,13 +50,21 @@ const formatRain = (v) =>
 const fmtTime = (iso) =>
     iso ? new Date(iso).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : "--";
 
-async function fetchJSON(url) {
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status} ${res.statusText}: ${text}`);
+async function fetchJSON(url, retries = 2) {
+    try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`${res.status} ${res.statusText}: ${text}`);
+        }
+        return res.json();
+    } catch (err) {
+        if (retries > 0) {
+            await new Promise((r) => setTimeout(r, 1000));
+            return fetchJSON(url, retries - 1);
+        }
+        throw err;
     }
-    return res.json();
 }
 
 function renderCurrent(observations = []) {
@@ -133,43 +141,6 @@ function renderWeekly(forecast) {
     });
 }
 
-function renderAlerts(alerts = []) {
-    currentAlerts = alerts;
-    alertsList.innerHTML = "";
-    if (!alerts.length) {
-        alertsList.innerHTML = '<li class="alert-item">No alerts yet.</li>';
-        return;
-    }
-    alerts.slice(0, 5).forEach((alert) => {
-        const item = document.createElement("li");
-        item.className = "alert-item";
-        item.innerHTML = `<strong>[${alert.level}]</strong> ${alert.message} • ${fmtTime(alert.triggered_at)}`;
-        alertsList.appendChild(item);
-    });
-}
-
-function connectAlerts(cityId) {
-    try {
-        if (mqttClient) {
-            mqttClient.end(true);
-        }
-        mqttClient = mqtt.connect(MQTT_URL);
-        mqttClient.on("connect", () => {
-            mqttClient.subscribe(`alerts/${cityId}`);
-        });
-        mqttClient.on("message", (_topic, message) => {
-            try {
-                const alert = JSON.parse(message.toString());
-                renderAlerts([alert, ...(currentAlerts || [])].slice(0, 5));
-            } catch (e) {
-                console.warn("Failed to parse alert", e);
-            }
-        });
-    } catch (e) {
-        console.warn("MQTT connection failed", e);
-    }
-}
-
 async function loadCity(cityLabel) {
     const cfg = CITY_CONFIG[cityLabel] || CITY_CONFIG.Brampton;
     cityName.textContent = cityLabel;
@@ -178,27 +149,24 @@ async function loadCity(cityLabel) {
     const obsUrl = `${API_BASE}/cities/${cfg.id}/observations?limit=100`;
     const aggUrl = `${API_BASE}/cities/${cfg.id}/aggregates?window=${encodeURIComponent("15 minutes")}&limit=8`;
     const forecastUrl = `${API_BASE}/cities/${cfg.id}/forecast?${qs}`;
-    const alertsUrl = `${API_BASE}/cities/${cfg.id}/alerts?limit=5`;
 
     try {
-        const [observations, aggregates, forecast, alerts] = await Promise.all([
+        const [observations, aggregates, forecast] = await Promise.all([
             fetchJSON(obsUrl),
             fetchJSON(aggUrl),
             fetchJSON(forecastUrl),
-            fetchJSON(alertsUrl),
         ]);
 
         renderCurrent(observations);
         renderHourly(aggregates);
         renderWeekly(forecast);
-        renderAlerts(alerts);
-        connectAlerts(cfg.id);
     } catch (err) {
         console.error("Failed to load data", err);
         updatedTime.textContent = "Last Updated: error loading data";
-        hourlyCards.innerHTML = '<div class="hour-card gradient-1">Error<span>--</span></div>';
-        weeklyCards.innerHTML = '<div class="day-card soft-1">Error<span>--</span></div>';
-        alertsList.innerHTML = `<li class="alert-item">Error: ${err.message}</li>`;
+        hourlyCards.innerHTML =
+            '<div class="hour-card gradient-1">Error<span>--</span></div>';
+        weeklyCards.innerHTML =
+            '<div class="day-card soft-1">Error<span>--</span></div>';
     }
 }
 
@@ -206,5 +174,3 @@ citySelect.addEventListener("change", () => loadCity(citySelect.value));
 
 // Initial load
 loadCity(citySelect.value);
-let mqttClient = null;
-let currentAlerts = [];

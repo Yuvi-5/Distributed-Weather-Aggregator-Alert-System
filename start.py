@@ -8,11 +8,19 @@ from pathlib import Path
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 import http.client
+import shutil
+import threading
+
+try:
+    import paho.mqtt.client as mqtt  # for local publishing of demo alerts
+except ImportError:
+    mqtt = None
 
 
 ROOT = Path(__file__).parent.resolve()
 COMPOSE_FILE = ROOT / "infra" / "docker-compose.yml"
 FRONTEND_DIR = ROOT / "frontend"
+ALERT_CLIENT = ROOT / "alert_client.py"
 
 API_BASE = "http://localhost:8080"
 FRONTEND_URL = "http://localhost:3000"
@@ -128,6 +136,134 @@ def seed_sample_events():
     print("[start] Seed complete (if mosquitto_pub is available in the container).")
 
 
+def seed_alert_triggers():
+    """
+    Publish extreme observations to trigger alerts (temp >35C, wind >40kph, humidity >0.85).
+    """
+    print("[start] Seeding alert-triggering observations...")
+    now = datetime.now(timezone.utc)
+    samples = [
+        # Toronto: hot + windy
+        {"city_id": "toronto", "temp_c": 37.5, "humidity": 0.58, "wind_kph": 45.0, "pressure_hpa": 1010, "rain_mm": 0.0},
+        {"city_id": "toronto", "temp_c": 38.2, "humidity": 0.60, "wind_kph": 42.0, "pressure_hpa": 1010, "rain_mm": 0.0},
+        {"city_id": "toronto", "temp_c": 36.8, "humidity": 0.57, "wind_kph": 46.5, "pressure_hpa": 1011, "rain_mm": 0.1},
+        # Toronto: humid spike to trigger 15m humidity rule
+        {"city_id": "toronto", "temp_c": 30.0, "humidity": 0.90, "wind_kph": 5.0, "pressure_hpa": 1012, "rain_mm": 0.0},
+        {"city_id": "toronto", "temp_c": 29.5, "humidity": 0.88, "wind_kph": 6.0, "pressure_hpa": 1012, "rain_mm": 0.0},
+    ]
+    for idx, payload in enumerate(samples):
+        payload["source"] = "alert-demo"
+        payload["observed_at"] = (now - timedelta(minutes=idx)).isoformat()
+        topic = f"city/{payload['city_id']}/observations"
+        message = json.dumps(payload)
+        cmd = [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE_FILE),
+            "exec",
+            "-T",
+            "mosquitto",
+            "mosquitto_pub",
+            "-h",
+            "mosquitto",
+            "-p",
+            "1883",
+            "-t",
+            topic,
+            "-m",
+            message,
+        ]
+        try:
+            run_cmd(cmd)
+        except Exception as exc:
+            print(f"[start] Failed to send alert-triggering message to {topic}: {exc}")
+            break
+    print("[start] Alert trigger seeding done.")
+
+
+def wait_for_alerts(city_id="toronto", timeout=120, poll=10):
+    print(f"[start] Waiting up to {timeout}s for alerts for {city_id} ...")
+    end = time.time() + timeout
+    last_error = None
+    while time.time() < end:
+        try:
+            url = f"{API_BASE}/cities/{city_id}/alerts?limit=5"
+            req = Request(url, headers={"X-API-Key": API_KEY})
+            with urlopen(req) as resp:
+                body = resp.read().decode("utf-8")
+                alerts = json.loads(body)
+                if alerts:
+                    print(f"[start] Alerts received:\n{json.dumps(alerts, indent=2)}")
+                    return alerts
+        except Exception as exc:
+            last_error = exc
+        time.sleep(poll)
+    if last_error:
+        print(f"[start] No alerts after waiting ({last_error})")
+    else:
+        print("[start] No alerts received within timeout.")
+    return []
+
+
+def start_alert_spammer(city_id="toronto", count=6, interval=5):
+    """
+    Publish demo alerts directly to MQTT alerts/{city} every interval seconds.
+    This drives the alert client window without waiting for rule evaluation.
+    """
+    def publish_local(alert_payload: dict):
+        if mqtt is None:
+            raise RuntimeError("paho-mqtt not installed")
+        client = mqtt.Client()
+        client.connect("localhost", 1883, keepalive=30)
+        client.loop_start()
+        client.publish(f"alerts/{city_id}", json.dumps(alert_payload))
+        client.loop_stop()
+        client.disconnect()
+
+    def _spam():
+        for i in range(count):
+            payload = {
+                "city_id": city_id,
+                "level": "warning",
+                "rule": "demo",
+                "message": f"Demo alert #{i+1}",
+                "triggered_at": datetime.now(timezone.utc).isoformat(),
+            }
+            try:
+                # Prefer local publish via paho; fallback to container mosquitto_pub.
+                if mqtt:
+                    publish_local(payload)
+                    print(f"[start] Published demo alert {i+1}/{count} (local paho) to alerts/{city_id}")
+                else:
+                    cmd = [
+                        "docker",
+                        "compose",
+                        "-f",
+                        str(COMPOSE_FILE),
+                        "exec",
+                        "-T",
+                        "mosquitto",
+                        "mosquitto_pub",
+                        "-h",
+                        "mosquitto",
+                        "-p",
+                        "1883",
+                        "-t",
+                        f"alerts/{city_id}",
+                        "-m",
+                        json.dumps(payload),
+                    ]
+                    run_cmd(cmd)
+                    print(f"[start] Published demo alert {i+1}/{count} (container) to alerts/{city_id}")
+            except Exception as exc:
+                print(f"[start] Failed to publish demo alert: {exc}")
+                break
+            time.sleep(interval)
+
+    threading.Thread(target=_spam, daemon=True).start()
+
+
 def start_frontend_server():
     print("[start] Launching frontend at http://localhost:3000 ...")
     return subprocess.Popen(
@@ -167,8 +303,19 @@ def main():
     compose_up()
     wait_ready()
     seed_sample_events()
+    seed_alert_triggers()
     frontend_proc = start_frontend_server()
+    alert_proc = None
+    if ALERT_CLIENT.exists():
+        print("[start] Launching alert client window...")
+        alert_proc = subprocess.Popen([sys.executable, str(ALERT_CLIENT)])
+    else:
+        print("[start] Alert client script not found; skipping.")
     open_browser()
+    # Start demo alert spammer for UI showcase.
+    start_alert_spammer(city_id="toronto", count=6, interval=5)
+    # Give the aggregator a minute to compute aggregates/alerts, then poll.
+    wait_for_alerts(city_id="toronto", timeout=90, poll=10)
     demo_calls()
     print("\n[start] Frontend is live at http://localhost:3000")
     print("[start] Backend API: http://localhost:8080 (use X-API-Key: devkey)")
@@ -179,10 +326,17 @@ def main():
     except KeyboardInterrupt:
         print("\n[start] Stopping frontend server...")
         frontend_proc.terminate()
+        if alert_proc:
+            alert_proc.terminate()
         try:
             frontend_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             frontend_proc.kill()
+        if alert_proc:
+            try:
+                alert_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                alert_proc.kill()
         print("[start] Done.")
 
 

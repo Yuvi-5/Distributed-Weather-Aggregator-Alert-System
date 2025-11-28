@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Distributed Weather System - Backend Map</title>
+  <link rel="stylesheet" href="backend-dashboard.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Distributed Weather System</h1>
+      <p class="subtitle">Architecture Map & Live Status</p>
+    </div>
+    <div id="last-updated">Last updated: --</div>
+  </header>
+
+  <main class="diagram">
+    <div class="column edge">
+      <div class="box edge-box">
+        <div class="title">Edge Nodes</div>
+        <div class="value" id="edge-count">--</div>
+        <div class="meta" id="edge-detail">Waiting for data...</div>
+      </div>
+      <div class="connector down"></div>
+      <div class="box broker-box">
+        <div class="title">Message Broker (MQTT)</div>
+        <div class="value" id="mqtt-status">--</div>
+        <div class="meta">host: mosquitto:1883</div>
+      </div>
+      <div class="connector down"></div>
+      <div class="box db-box">
+        <div class="title">Database</div>
+        <div class="value" id="db-status">--</div>
+        <div class="meta">Timescale/Postgres</div>
+      </div>
+    </div>
+
+    <div class="column center">
+      <div class="flow-arrow right"></div>
+      <div class="box forecast-box">
+        <div class="title">7-Day Forecast</div>
+        <div class="value" id="forecast-status">OpenWeather</div>
+        <div class="meta" id="forecast-meta">Placeholder</div>
+      </div>
+      <div class="flow-arrow down"></div>
+      <div class="box agg-box">
+        <div class="title">Aggregator & Forecast</div>
+        <div class="value" id="agg-status">--</div>
+        <div class="meta" id="agg-detail">Observations ➜ Aggregates</div>
+      </div>
+      <div class="flow-arrow down"></div>
+      <div class="box alert-box">
+        <div class="title">Alert & Broadcast</div>
+        <div class="value" id="alert-status">--</div>
+        <div class="meta" id="alert-detail">Rules engine</div>
+      </div>
+    </div>
+
+    <div class="column viz">
+      <div class="flow-arrow right"></div>
+      <div class="box viz-box">
+        <div class="title">Visualization Dashboard</div>
+        <div class="value">Frontend</div>
+        <div class="meta">Observations • Aggregates • Forecast</div>
+      </div>
+    </div>
+  </main>
+
+  <section class="metrics">
+    <div class="metric">
+      <div class="label">Observations (recent)</div>
+      <div class="big" id="obs-count">--</div>
+    </div>
+    <div class="metric">
+      <div class="label">Aggregates (15m)</div>
+      <div class="big" id="agg-count">--</div>
+    </div>
+    <div class="metric">
+      <div class="label">Alerts (stored)</div>
+      <div class="big" id="stored-alerts">--</div>
+    </div>
+  </section>
+
+  <script src="backend-dashboard.js?v=2"></script>
+</body>
+</html>
